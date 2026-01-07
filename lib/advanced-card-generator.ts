@@ -406,8 +406,9 @@ export function generateAdvancedStatsSVG(
     let chartData: number[];
     
     if (stats.contributionData && stats.contributionData.length > 0) {
-      // Use actual contribution data from last 31 days
-      chartData = stats.contributionData.slice(-dataPoints);
+      // Use actual contribution data from last 31 days (map to counts)
+      const lastDays = stats.contributionData.slice(-dataPoints);
+      chartData = lastDays.map(d => d.count);
       // Pad with zeros if less than 31 days
       while (chartData.length < dataPoints) {
         chartData.unshift(0);

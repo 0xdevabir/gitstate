@@ -2,12 +2,20 @@ import axios from 'axios';
 import { GitHubUser, GitHubRepo, GitHubStats, ContributionData } from '@/types/github';
 
 const GITHUB_API_BASE = 'https://api.github.com';
+const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
 const githubAxios = axios.create({
   baseURL: GITHUB_API_BASE,
   headers: {
     Accept: 'application/vnd.github.v3+json',
     ...(process.env.GITHUB_TOKEN && { Authorization: `token ${process.env.GITHUB_TOKEN}` }),
+  },
+});
+
+const graphqlAxios = axios.create({
+  headers: {
+    'Content-Type': 'application/json',
+    ...(process.env.GITHUB_TOKEN && { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }),
   },
 });
 
@@ -38,29 +46,168 @@ export async function fetchUserRepositories(username: string): Promise<GitHubRep
   }
 }
 
-export async function fetchUserContributions(username: string): Promise<number> {
+export async function fetchUserStats(username: string): Promise<{
+  pullRequests: number;
+  issues: number;
+  contributions: number;
+}> {
   try {
-    // This endpoint returns issues and PRs created by the user
-    const response = await githubAxios.get(`/search/issues?q=author:${username}&per_page=1`);
-    return response.data.total_count;
+    // If no token, contributions will be 0 (GitHub doesn't expose this in public API)
+    if (!process.env.GITHUB_TOKEN) {
+      return {
+        pullRequests: 0,
+        issues: 0,
+        contributions: 0,
+      };
+    }
+
+    const query = `
+      query($userName:String!) {
+        user(login: $userName) {
+          contributionsCollection {
+            totalCommitContributions
+            totalIssueContributions
+            totalPullRequestContributions
+            totalRepositoryContributions
+          }
+        }
+      }
+    `;
+
+    const response = await graphqlAxios.post(GITHUB_GRAPHQL_URL, {
+      query,
+      variables: { userName: username },
+    });
+
+    if (response.data.errors) {
+      console.error('GraphQL error:', response.data.errors);
+      return {
+        pullRequests: 0,
+        issues: 0,
+        contributions: 0,
+      };
+    }
+
+    const collection = response.data.data?.user?.contributionsCollection;
+    if (collection) {
+      return {
+        pullRequests: collection.totalPullRequestContributions || 0,
+        issues: collection.totalIssueContributions || 0,
+        contributions:
+          (collection.totalCommitContributions || 0) +
+          (collection.totalIssueContributions || 0) +
+          (collection.totalPullRequestContributions || 0) +
+          (collection.totalRepositoryContributions || 0),
+      };
+    }
+
+    return {
+      pullRequests: 0,
+      issues: 0,
+      contributions: 0,
+    };
   } catch (error) {
-    console.error('Failed to fetch contributions:', error);
-    return 0;
+    console.error('Failed to fetch user stats:', error);
+    return {
+      pullRequests: 0,
+      issues: 0,
+      contributions: 0,
+    };
+  }
+}
+
+// Fetch detailed contribution calendar (last year) using GraphQL
+async function fetchGraphQLContributions(username: string): Promise<{
+  pullRequests: number;
+  issues: number;
+  totalContributions: number;
+  daily: ContributionData[];
+}> {
+  try {
+    if (!process.env.GITHUB_TOKEN) {
+      return { pullRequests: 0, issues: 0, totalContributions: 0, daily: [] };
+    }
+
+    const query = `
+      query($userName:String!) {
+        user(login: $userName) {
+          contributionsCollection {
+            totalCommitContributions
+            totalIssueContributions
+            totalPullRequestContributions
+            totalRepositoryContributions
+            contributionCalendar {
+              totalContributions
+              weeks {
+                contributionDays {
+                  date
+                  contributionCount
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const response = await graphqlAxios.post(GITHUB_GRAPHQL_URL, {
+      query,
+      variables: { userName: username },
+    });
+
+    if (response.data.errors) {
+      console.error('GraphQL error:', response.data.errors);
+      return { pullRequests: 0, issues: 0, totalContributions: 0, daily: [] };
+    }
+
+    const collection = response.data.data?.user?.contributionsCollection;
+    if (!collection) {
+      return { pullRequests: 0, issues: 0, totalContributions: 0, daily: [] };
+    }
+
+    const pr = collection.totalPullRequestContributions || 0;
+    const iss = collection.totalIssueContributions || 0;
+    const commits = collection.totalCommitContributions || 0;
+    const reposContrib = collection.totalRepositoryContributions || 0;
+    const totalContributions = collection.contributionCalendar?.totalContributions || (pr + iss + commits + reposContrib);
+
+    const weeks = collection.contributionCalendar?.weeks || [];
+    const daily: ContributionData[] = [];
+    weeks.forEach((week: any) => {
+      week.contributionDays.forEach((day: any) => {
+        daily.push({ date: day.date, count: day.contributionCount });
+      });
+    });
+
+    // Ensure sorted by date
+    daily.sort((a, b) => (a.date > b.date ? 1 : -1));
+
+    return { pullRequests: pr, issues: iss, totalContributions, daily };
+  } catch (error) {
+    console.error('Failed to fetch GraphQL contributions:', error);
+    return { pullRequests: 0, issues: 0, totalContributions: 0, daily: [] };
   }
 }
 
 export function calculateTopLanguages(repos: GitHubRepo[]): { [key: string]: number } {
   const languages: { [key: string]: number } = {};
+  let totalCount = 0;
 
   repos.forEach((repo) => {
     if (repo.language) {
       languages[repo.language] = (languages[repo.language] || 0) + 1;
+      totalCount++;
     }
   });
 
-  // Sort by count and return top 5
+  // Convert to percentages and return top 5
+  const percentages: { [key: string]: number } = {};
+  Object.entries(languages).forEach(([lang, count]) => {
+    percentages[lang] = Math.round((count / totalCount) * 100);
+  });
+
   return Object.fromEntries(
-    Object.entries(languages)
+    Object.entries(percentages)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
   );
@@ -78,61 +225,31 @@ export async function fetchCompleteStats(username: string): Promise<{ stats: Git
   try {
     const user = await fetchGitHubUser(username);
     const repos = await fetchUserRepositories(username);
-    const contributions = await fetchUserContributions(username);
+    const gql = await fetchGraphQLContributions(username);
 
-    // Fetch PRs, Issues, and Contributed To count
-    let pullRequests = 0;
-    let issues = 0;
-    let contributedTo = 0;
+    // Use real daily contribution data from GraphQL (last 31 days)
+    const allDays = gql.daily;
+    const contributionData: ContributionData[] = allDays.length > 0
+      ? allDays.slice(Math.max(0, allDays.length - 31))
+      : [];
 
-    try {
-      // Get total PRs created
-      const prResponse = await githubAxios.get(`/search/issues?q=author:${username}%20type:pr&per_page=1`);
-      pullRequests = prResponse.data.total_count;
-    } catch (error) {
-      console.error('Failed to fetch PR count:', error);
-    }
-
-    try {
-      // Get total Issues created
-      const issueResponse = await githubAxios.get(`/search/issues?q=author:${username}%20type:issue&per_page=1`);
-      issues = issueResponse.data.total_count;
-    } catch (error) {
-      console.error('Failed to fetch issue count:', error);
-    }
-
-    try {
-      // Get repositories user has contributed to
-      // Estimate based on API - count repos with pushed_at recently
-      const recentRepos = repos.filter(repo => {
-        const pushed = new Date(repo.pushed_at);
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        return pushed > monthAgo;
-      });
-      contributedTo = Math.max(recentRepos.length, Math.round(repos.length * 0.3));
-    } catch (error) {
-      console.error('Failed to fetch contributed to count:', error);
-      contributedTo = Math.round(repos.length * 0.3);
-    }
-
-    // Generate contribution data for last 31 days
-    const contributionData: ContributionData[] = [];
-    for (let i = 30; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      // Generate realistic contribution data based on average
-      const avgDaily = Math.round(contributions / 365);
-      const count = Math.round(avgDaily * (0.5 + Math.random()));
-      contributionData.push({ date: dateStr, count });
-    }
-
-    // Calculate streaks (simulated based on contribution data)
+    // Calculate streaks from contribution data
     let currentStreak = 0;
     let longestStreak = 0;
     let tempStreak = 0;
 
+    // Check streaks from the end (current) backwards
+    for (let i = contributionData.length - 1; i >= 0; i--) {
+      if (contributionData[i].count > 0) {
+        tempStreak++;
+      } else if (tempStreak > 0) {
+        currentStreak = tempStreak;
+        break;
+      }
+    }
+
+    // Calculate longest streak
+    tempStreak = 0;
     for (const data of contributionData) {
       if (data.count > 0) {
         tempStreak++;
@@ -141,7 +258,16 @@ export async function fetchCompleteStats(username: string): Promise<{ stats: Git
         tempStreak = 0;
       }
     }
-    currentStreak = tempStreak;
+
+    // Calculate contributed to (repos that aren't forks and have been updated)
+    const activeRepos = repos.filter((repo) => {
+      if (repo.fork) return false;
+      const pushed = new Date(repo.pushed_at);
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      return pushed > threeMonthsAgo;
+    });
+    const contributedTo = Math.max(5, activeRepos.length);
 
     const topLanguages = calculateTopLanguages(repos);
     const totalStars = calculateTotalStars(repos);
@@ -162,12 +288,12 @@ export async function fetchCompleteStats(username: string): Promise<{ stats: Git
       }),
       topLanguages,
       topRepos,
-      contributions,
+      contributions: gql.totalContributions,
       contributionData,
-      currentStreak,
-      longestStreak,
-      pullRequests,
-      issues,
+      currentStreak: Math.max(currentStreak, 0),
+      longestStreak: Math.max(longestStreak, 1),
+      pullRequests: gql.pullRequests,
+      issues: gql.issues,
       contributedTo,
     };
 

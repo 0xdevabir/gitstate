@@ -24,6 +24,7 @@ export interface GitHubRepo {
   url: string;
   html_url: string;
   language: string | null;
+  fork: boolean;
   stargazers_count: number;
   forks_count: number;
   open_issues_count: number;
