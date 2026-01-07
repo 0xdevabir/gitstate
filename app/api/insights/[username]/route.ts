@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCompleteStats } from '@/lib/github-api';
-import { generateStatsSVG, createCardConfig } from '@/lib/card-generator';
+import { generateAdvancedStatsSVG } from '@/lib/advanced-card-generator';
+import { createCardConfig } from '@/lib/card-generator';
 
 export const revalidate = 3600; // Cache for 1 hour
 
@@ -10,7 +11,6 @@ export async function GET(
 ) {
   const { username } = await params;
   try {
-
     const searchParams = request.nextUrl.searchParams;
     const theme = searchParams.get('theme') || 'dark';
     const displayOptions = {
@@ -22,6 +22,9 @@ export async function GET(
       showLocation: searchParams.get('showLocation') !== 'false',
       showName: searchParams.get('showName') !== 'false',
       showContributions: searchParams.get('showContributions') !== 'false',
+      showCharts: searchParams.get('showCharts') !== 'false',
+      showStreak: searchParams.get('showStreak') !== 'false',
+      showLanguageChart: searchParams.get('showLanguageChart') !== 'false',
     };
 
     // Fetch GitHub stats
@@ -31,7 +34,7 @@ export async function GET(
     const config = createCardConfig(username, theme, displayOptions);
 
     // Generate SVG
-    const svg = generateStatsSVG(username, stats, config, user);
+    const svg = generateAdvancedStatsSVG(username, stats, config, user);
 
     // Return SVG response
     return new NextResponse(svg, {

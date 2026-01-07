@@ -15,7 +15,13 @@ export async function fetchGitHubUser(username: string): Promise<GitHubUser> {
   try {
     const response = await githubAxios.get<GitHubUser>(`/users/${username}`);
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.response?.status === 403) {
+      throw new Error('GitHub API rate limit exceeded. Please add a GITHUB_TOKEN to your .env.local file for higher limits (5000 requests/hour vs 60).');
+    }
+    if (error.response?.status === 404) {
+      throw new Error(`User "${username}" not found on GitHub. Please check the username and try again.`);
+    }
     throw new Error(`Failed to fetch user ${username}: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -24,7 +30,10 @@ export async function fetchUserRepositories(username: string): Promise<GitHubRep
   try {
     const response = await githubAxios.get<GitHubRepo[]>(`/users/${username}/repos?per_page=100&sort=stars&order=desc`);
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.response?.status === 403) {
+      throw new Error('GitHub API rate limit exceeded. Please add a GITHUB_TOKEN to your .env.local file.');
+    }
     throw new Error(`Failed to fetch repositories for ${username}: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

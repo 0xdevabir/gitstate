@@ -33,6 +33,11 @@ export interface GitHubRepo {
   pushed_at: string;
 }
 
+export interface ContributionData {
+  date: string;
+  count: number;
+}
+
 export interface GitHubStats {
   totalRepos: number;
   totalFollowers: number;
@@ -44,6 +49,12 @@ export interface GitHubStats {
   topLanguages: { [key: string]: number };
   topRepos: GitHubRepo[];
   contributions: number;
+  contributionData?: ContributionData[];
+  currentStreak?: number;
+  longestStreak?: number;
+  pullRequests?: number;
+  issues?: number;
+  contributedTo?: number;
 }
 
 export interface StatsCardConfig {
@@ -58,6 +69,9 @@ export interface StatsCardConfig {
     showLocation: boolean;
     showName: boolean;
     showContributions: boolean;
+    showCharts: boolean;
+    showStreak: boolean;
+    showLanguageChart: boolean;
   };
 }
 
