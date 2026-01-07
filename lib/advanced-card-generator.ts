@@ -394,47 +394,96 @@ export function generateAdvancedStatsSVG(
 
   // Contribution Activity Chart
   if (config.displayOptions.showCharts) {
-    const chartHeight = 140;
-    svg += `<rect x="${leftColX}" y="${yOffset}" width="${width - 60}" height="${chartHeight}" fill="${colors.cardLight}" rx="10"/>`;
-    svg += `<text x="${leftColX + 15}" y="${yOffset + 20}" font-size="14" font-weight="bold" fill="${colors.highlight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">🔄 Contribution Activity</text>`;
-    svg += `<text x="${leftColX + 15}" y="${yOffset + 35}" font-size="10" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">Daily contributions   Dec 2025 - Jan 2026</text>`;
-
-    // Generate sample data for chart
-    const dataPoints = 60;
-    const chartData = Array(dataPoints).fill(0).map(() => Math.floor(Math.random() * 20));
-    const maxValue = Math.max(...chartData, 1);
+    const chartHeight = 200;
+    const chartBg = '#1a1d29';
+    svg += `<rect x="${leftColX}" y="${yOffset}" width="${width - 60}" height="${chartHeight}" fill="${chartBg}" rx="10"/>`;
     
-    const chartX = leftColX + 15;
-    const chartY = yOffset + 50;
-    const chartWidth = width - 90;
-    const chartInnerHeight = 80;
-    
-    // Y-axis labels
-    svg += `<text x="${chartX - 5}" y="${chartY}" font-size="8" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="end">28</text>`;
-    svg += `<text x="${chartX - 5}" y="${chartY + chartInnerHeight / 2}" font-size="8" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="end">14</text>`;
-    svg += `<text x="${chartX - 5}" y="${chartY + chartInnerHeight}" font-size="8" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="end">0</text>`;
+    // Title
+    svg += `<text x="${(width - 60) / 2 + leftColX}" y="${yOffset + 22}" font-size="14" font-weight="bold" fill="${colors.highlight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">${username}'s Contribution Graph</text>`;
 
-    // X-axis marks
-    const xAxisY = chartY + chartInnerHeight + 10;
-    [0, 15, 27, 52].forEach((day) => {
-      const x = chartX + (day / dataPoints) * chartWidth;
-      svg += `<text x="${x}" y="${xAxisY}" font-size="8" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">${day}</text>`;
+    // Use actual contribution data or generate realistic data based on actual contributions
+    const dataPoints = 31;
+    let chartData: number[];
+    
+    if (stats.contributionData && stats.contributionData.length > 0) {
+      // Use actual contribution data from last 31 days
+      chartData = stats.contributionData.slice(-dataPoints);
+      // Pad with zeros if less than 31 days
+      while (chartData.length < dataPoints) {
+        chartData.unshift(0);
+      }
+    } else {
+      // Generate realistic data based on average daily contributions
+      const avgDaily = Math.round(stats.contributions / 365);
+      chartData = Array(dataPoints).fill(0).map(() => {
+        const variation = Math.random() * 2; // 0 to 2x multiplier
+        return Math.round(avgDaily * variation);
+      });
+    }
+    
+    const maxValue = Math.max(...chartData, 10);
+    
+    const chartPaddingLeft = 45;
+    const chartPaddingRight = 20;
+    const chartPaddingTop = 45;
+    const chartPaddingBottom = 30;
+    
+    const chartX = leftColX + chartPaddingLeft;
+    const chartY = yOffset + chartPaddingTop;
+    const chartWidth = width - 60 - chartPaddingLeft - chartPaddingRight;
+    const chartInnerHeight = chartHeight - chartPaddingTop - chartPaddingBottom;
+    
+    // Grid lines (horizontal)
+    const gridSteps = 6;
+    for (let i = 0; i <= gridSteps; i++) {
+      const y = chartY + (chartInnerHeight / gridSteps) * i;
+      svg += `<line x1="${chartX}" y1="${y}" x2="${chartX + chartWidth}" y2="${y}" stroke="#2a2e3d" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+    }
+    
+    // Grid lines (vertical) - every 5 days
+    for (let i = 0; i <= 6; i++) {
+      const x = chartX + (chartWidth / 6) * i;
+      svg += `<line x1="${x}" y1="${chartY}" x2="${x}" y2="${chartY + chartInnerHeight}" stroke="#2a2e3d" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+    }
+    
+    // Y-axis label (rotated)
+    svg += `<text x="${leftColX + 12}" y="${chartY + chartInnerHeight / 2}" font-size="10" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle" transform="rotate(-90 ${leftColX + 12} ${chartY + chartInnerHeight / 2})">Contributions</text>`;
+    
+    // Y-axis values
+    const yAxisValues = [maxValue, Math.round(maxValue * 0.83), Math.round(maxValue * 0.67), Math.round(maxValue * 0.5), Math.round(maxValue * 0.33), Math.round(maxValue * 0.17), 0];
+    yAxisValues.forEach((value, index) => {
+      const y = chartY + (chartInnerHeight / 6) * index;
+      svg += `<text x="${chartX - 8}" y="${y + 3}" font-size="9" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="end">${value}</text>`;
     });
 
-    // Chart line
+    // X-axis label
+    svg += `<text x="${chartX + chartWidth / 2}" y="${chartY + chartInnerHeight + 25}" font-size="10" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">Days</text>`;
+    
+    // X-axis marks - showing key days
+    const xAxisDays = [0, 5, 10, 15, 20, 25, 30];
+    xAxisDays.forEach((day) => {
+      const x = chartX + (day / (dataPoints - 1)) * chartWidth;
+      svg += `<text x="${x}" y="${chartY + chartInnerHeight + 15}" font-size="8" fill="${colors.textLight}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">${day}</text>`;
+    });
+
+    // Chart line path
     let pathData = '';
+    const points: Array<[number, number]> = [];
+    
     chartData.forEach((value, index) => {
       const x = chartX + (index / (dataPoints - 1)) * chartWidth;
       const y = chartY + chartInnerHeight - (value / maxValue) * chartInnerHeight;
+      points.push([x, y]);
       pathData += index === 0 ? `M ${x},${y}` : ` L ${x},${y}`;
     });
 
-    // Area fill
-    const areaPath = `${pathData} L ${chartX + chartWidth},${chartY + chartInnerHeight} L ${chartX},${chartY + chartInnerHeight} Z`;
-    svg += `<path d="${areaPath}" fill="url(#areaGradient)"/>`;
+    // Draw the line
+    svg += `<path d="${pathData}" stroke="${colors.highlight}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
     
-    // Line
-    svg += `<path d="${pathData}" stroke="${colors.highlight}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    // Draw dots at each data point
+    points.forEach(([x, y]) => {
+      svg += `<circle cx="${x}" cy="${y}" r="3" fill="#ffffff" stroke="${colors.highlight}" stroke-width="1.5"/>`;
+    });
   }
 
   svg += '</svg>';
